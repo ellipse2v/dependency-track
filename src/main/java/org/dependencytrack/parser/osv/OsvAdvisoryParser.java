@@ -80,6 +80,14 @@ public class OsvAdvisoryParser {
                 }
             }
 
+            // update for RLSA and DLA
+            final JSONArray related = object.optJSONArray("related");
+            if(related != null) {
+                for (int i=0; i<related.length(); i++) {
+                    advisory.addAlias(related.optString(i));
+                }
+            }
+
             final JSONObject databaseSpecific = object.optJSONObject("database_specific");
             if (databaseSpecific != null) {
                 advisory.setSeverity(databaseSpecific.optString("severity", null));
