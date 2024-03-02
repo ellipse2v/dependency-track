@@ -178,6 +178,42 @@ public class OsvDownloadTaskTest extends PersistenceCapableTest {
     }
 
     @Test
+    public void testAliasWithRLSA() throws Exception {
+        // Enable alias synchronization
+        qm.createConfigProperty(
+                ConfigPropertyConstants.VULNERABILITY_SOURCE_GOOGLE_OSV_ALIAS_SYNC_ENABLED.getGroupName(),
+                ConfigPropertyConstants.VULNERABILITY_SOURCE_GOOGLE_OSV_ALIAS_SYNC_ENABLED.getPropertyName(),
+                "true",
+                ConfigPropertyConstants.VULNERABILITY_SOURCE_GOOGLE_OSV_ALIAS_SYNC_ENABLED.getPropertyType(),
+                null
+        );
+
+        prepareJsonObject("src/test/resources/unit/osv.jsons/osv-RLSA-20190981.json");
+        OsvAdvisory advisory = parser.parse(jsonObject);
+        Assert.assertNotNull(advisory);
+        Assert.assertEquals(41, advisory.getAffectedPackages().size());
+
+        // pass the mapped advisory to OSV task to update the database
+        final var task = new OsvDownloadTask();
+        task.updateDatasource(advisory);
+
+        Vulnerability vulnerability = qm.getVulnerabilityByVulnId("OSV", "RLSA-2019:0981", true);
+
+        final List<VulnerabilityAlias> aliases = qm.getVulnerabilityAliases(vulnerability);
+        assertThat(aliases).satisfiesExactly(
+                alias -> {
+                    assertThat(alias.getCveId()).isEqualTo("CVE-2019-7164");
+                },
+                alias -> {
+                    assertThat(alias.getCveId()).isEqualTo("CVE-2019-7548");
+                },
+                alias -> {
+                    assertThat(alias.getCveId()).isEqualTo("CVE-2019-9636");
+                }
+        );
+    }
+
+    @Test
     public void testUpdateDatasourceVulnerableVersionRanges() {
         var vs1 = new VulnerableSoftware();
         vs1.setPurlType("maven");
