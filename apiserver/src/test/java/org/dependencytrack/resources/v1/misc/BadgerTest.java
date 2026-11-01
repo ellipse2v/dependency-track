@@ -146,6 +146,36 @@ public class BadgerTest {
         Assertions.assertEquals(strip(svg), strip(expectedSvg("project-violations-href.svg")));
     }
 
+    @Test
+    public void generateKevWithoutMetricsGenerateExpectedSvg() throws Exception {
+        String svg = new Badger().generateKev(null, null);
+        Assertions.assertEquals(strip(svg), strip(expectedSvg("project-kev-nometrics.svg")));
+    }
+
+    @Test
+    public void generateKevWithoutKevGenerateExpectedSvg() throws Exception {
+        ProjectMetrics metrics = new ProjectMetrics();
+        metrics.setKev(0);
+        String svg = new Badger().generateKev(metrics, null);
+        Assertions.assertEquals(strip(svg), strip(expectedSvg("project-kev-none.svg")));
+    }
+
+    @Test
+    public void generateKevWithKevGenerateExpectedSvg() throws Exception {
+        ProjectMetrics metrics = new ProjectMetrics();
+        metrics.setKev(12);
+        String svg = new Badger().generateKev(metrics, null);
+        Assertions.assertEquals(strip(svg), strip(expectedSvg("project-kev.svg")));
+    }
+
+    @Test
+    public void generateKevWithKevGenerateExpectedSvgClickable() throws Exception {
+        ProjectMetrics metrics = new ProjectMetrics();
+        metrics.setKev(12);
+        String svg = new Badger().generateKev(metrics, "test.url.com?kev=true");
+        Assertions.assertEquals(strip(svg), strip(expectedSvg("project-kev-href.svg")));
+    }
+
     private String expectedSvg(String filename) throws Exception {
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         URL resource = contextClassLoader.getResource("badge/" + filename);

@@ -51,6 +51,10 @@ public class Badger {
             ENGINE.getTemplate("templates/badge/project-violations-none.peb");
     private static final PebbleTemplate PROJECT_VIOLATIONS_NO_METRICS_TEMPLATE =
             ENGINE.getTemplate("templates/badge/project-violations-nometrics.peb");
+    private static final PebbleTemplate PROJECT_KEV_TEMPLATE = ENGINE.getTemplate("templates/badge/project-kev.peb");
+    private static final String KEV_COLOR_PRESENT = "#dc0000";
+    private static final String KEV_COLOR_NONE = "#4c1";
+    private static final String KEV_COLOR_NO_METRICS = "#9f9f9f";
 
     public String generateVulnerabilities(ProjectMetrics metrics, String linkToProjectVuln) {
         final Map<String, Object> context = new HashMap<>();
@@ -88,6 +92,35 @@ public class Badger {
         } else {
             return writeSvg(PROJECT_VIOLATIONS_NONE_TEMPLATE, context);
         }
+    }
+
+    public String generateKev(ProjectMetrics metrics, String linkToProjectKevFindings) {
+        final String value;
+        final String color;
+        if (metrics == null) {
+            value = "no metrics";
+            color = KEV_COLOR_NO_METRICS;
+        } else if (metrics.getKev() > 0) {
+            value = String.valueOf(metrics.getKev());
+            color = KEV_COLOR_PRESENT;
+        } else {
+            value = "none";
+            color = KEV_COLOR_NONE;
+        }
+
+        // Approximates the rendered width of 11px sans-serif text, plus padding.
+        final int valueWidth = Math.max(20, value.length() * 7 + 12);
+
+        final Map<String, Object> context = new HashMap<>();
+        context.put("roundedPixels", "3");
+        context.put("value", value);
+        context.put("color", color);
+        context.put("valueWidth", String.valueOf(valueWidth));
+        context.put("width", String.valueOf(34 + valueWidth));
+        if (linkToProjectKevFindings != null && !linkToProjectKevFindings.isBlank()) {
+            context.put("href", linkToProjectKevFindings);
+        }
+        return writeSvg(PROJECT_KEV_TEMPLATE, context);
     }
 
     private String writeSvg(PebbleTemplate template, Map<String, Object> context) {

@@ -240,6 +240,84 @@ public class BadgeResource extends AbstractApiResource {
         }
     }
 
+    @GET
+    @Path("/kev/project/{uuid}")
+    @Produces(SVG_MEDIA_TYPE)
+    @Operation(summary = "Returns a known exploited vulnerabilities (KEV) badge for a specific project")
+    @ApiResponses(
+            value = {
+                @ApiResponse(
+                        responseCode = "200",
+                        description =
+                                "A badge displaying the number of known exploited vulnerabilities of a project in SVG format",
+                        content = @Content(schema = @Schema(type = "string"))),
+                @ApiResponse(responseCode = "403", description = "Badges are disabled"),
+                @ApiResponse(responseCode = "404", description = "The project could not be found")
+            })
+    @AuthenticationNotRequired
+    public Response getProjectKevBadge(
+            @Parameter(
+                            description = "The UUID of the project to retrieve a badge for",
+                            schema = @Schema(type = "string", format = "uuid"),
+                            required = true)
+                    @PathParam("uuid")
+                    @ValidUuid
+                    String uuid) {
+        try (QueryManager qm = new QueryManager(getAlpineRequest())) {
+            if (!isBadgeEnabled()) {
+                return Response.status(Response.Status.FORBIDDEN).build();
+            }
+            return createKevBadgeResponse(qm.getObjectByUuid(Project.class, uuid));
+        }
+    }
+
+    @GET
+    @Path("/kev/project/{name}/{version}")
+    @Produces(SVG_MEDIA_TYPE)
+    @Operation(summary = "Returns a known exploited vulnerabilities (KEV) badge for a specific project")
+    @ApiResponses(
+            value = {
+                @ApiResponse(
+                        responseCode = "200",
+                        description =
+                                "A badge displaying the number of known exploited vulnerabilities of a project in SVG format",
+                        content = @Content(schema = @Schema(type = "string"))),
+                @ApiResponse(responseCode = "403", description = "Badges are disabled"),
+                @ApiResponse(responseCode = "404", description = "The project could not be found")
+            })
+    @AuthenticationNotRequired
+    public Response getProjectKevBadge(
+            @Parameter(description = "The name of the project to query on", required = true) @PathParam("name")
+                    String name,
+            @Parameter(description = "The version of the project to query on", required = true) @PathParam("version")
+                    String version) {
+        try (QueryManager qm = new QueryManager(getAlpineRequest())) {
+            if (!isBadgeEnabled()) {
+                return Response.status(Response.Status.FORBIDDEN).build();
+            }
+            return createKevBadgeResponse(qm.getProject(name, version));
+        }
+    }
+
+    private static Response createKevBadgeResponse(@Nullable Project project) {
+        if (project == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("The project could not be found.")
+                    .build();
+        }
+
+        final ProjectMetrics metrics =
+                withJdbiHandle(handle -> handle.attach(MetricsDao.class).getMostRecentProjectMetrics(project));
+
+        String linkToProjectKevFindings = null;
+        final String baseUrl = getBaseUrl();
+        if (baseUrl != null) {
+            linkToProjectKevFindings = baseUrl + "/projects/" + project.getUuid() + "/findings?kev=true";
+        }
+        return Response.ok(new Badger().generateKev(metrics, linkToProjectKevFindings))
+                .build();
+    }
+
     private static boolean isBadgeEnabled() {
         return Boolean.TRUE.equals(
                 withJdbiHandle(handle -> handle.attach(ConfigPropertyDao.class).isEnabled(GENERAL_BADGE_ENABLED)));

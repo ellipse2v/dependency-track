@@ -247,6 +247,81 @@ public class BadgeResourceTest extends ResourceTest {
         assertThatBodyContainsAggregatedViolationMetrics(getPlainTextBody(response));
     }
 
+    @Test
+    public void shouldReturnKevBadgeByUuid() {
+        final Project project = qm.createProject("Acme Example", null, "1.0.0", null, null, null, null, false);
+        final Response response = jersey.target(V1_BADGE + "/kev/project/" + project.getUuid())
+                .request()
+                .get(Response.class);
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getHeaderString("Content-Type")).isEqualTo("image/svg+xml");
+        final String body = getPlainTextBody(response);
+        assertThat(isLikelySvg(body)).isTrue();
+        assertThat(body).contains(">no metrics</text>");
+    }
+
+    @Test
+    public void shouldReturn404ForKevBadgeByUuidWhenProjectNotFound() {
+        final Response response = jersey.target(V1_BADGE + "/kev/project/" + UUID.randomUUID())
+                .request()
+                .get(Response.class);
+        assertThat(response.getStatus()).isEqualTo(404);
+    }
+
+    @Test
+    public void shouldReturn403ForKevBadgeByUuidWhenDisabled() {
+        useJdbiHandle(handle -> handle.attach(ConfigPropertyDao.class).setValue(GENERAL_BADGE_ENABLED, "false"));
+        final Project project = qm.createProject("Acme Example", null, "1.0.0", null, null, null, null, false);
+        final Response response = jersey.target(V1_BADGE + "/kev/project/" + project.getUuid())
+                .request()
+                .get(Response.class);
+        assertThat(response.getStatus()).isEqualTo(403);
+    }
+
+    @Test
+    public void shouldReturnKevBadgeByNameAndVersion() {
+        qm.createProject("Acme Example", null, "1.0.0", null, null, null, null, false);
+        final Response response = jersey.target(V1_BADGE + "/kev/project/Acme%20Example/1.0.0")
+                .request()
+                .get(Response.class);
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getHeaderString("Content-Type")).isEqualTo("image/svg+xml");
+        assertThat(isLikelySvg(getPlainTextBody(response))).isTrue();
+    }
+
+    @Test
+    public void shouldReturn404ForKevBadgeByNameAndVersionWhenVersionNotFound() {
+        qm.createProject("Acme Example", null, "1.0.0", null, null, null, null, false);
+        final Response response = jersey.target(V1_BADGE + "/kev/project/Acme%20Example/9.9.9")
+                .request()
+                .get(Response.class);
+        assertThat(response.getStatus()).isEqualTo(404);
+    }
+
+    @Test
+    public void shouldReturn403ForKevBadgeByNameAndVersionWhenDisabled() {
+        useJdbiHandle(handle -> handle.attach(ConfigPropertyDao.class).setValue(GENERAL_BADGE_ENABLED, "false"));
+        qm.createProject("Acme Example", null, "1.0.0", null, null, null, null, false);
+        final Response response = jersey.target(V1_BADGE + "/kev/project/Acme%20Example/1.0.0")
+                .request()
+                .get(Response.class);
+        assertThat(response.getStatus()).isEqualTo(403);
+    }
+
+    @Test
+    public void shouldReturnKevBadgeWithAggregatedMetricsForCollectionProjectByUuid() {
+        final Project collection = createCollectionProjectWithChildMetrics();
+
+        final Response response = jersey.target(V1_BADGE + "/kev/project/" + collection.getUuid())
+                .request()
+                .get();
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getHeaderString("Content-Type")).isEqualTo("image/svg+xml");
+        final String body = getPlainTextBody(response);
+        assertThat(isLikelySvg(body)).isTrue();
+        assertThat(body).contains(">5</text>").contains("#dc0000");
+    }
+
     private Project createCollectionProjectWithChildMetrics() {
         final var parent = new Project();
         parent.setName("acme-collection");
@@ -279,6 +354,7 @@ public class BadgeResourceTest extends ResourceTest {
             metricsA.setPolicyViolationsFail(2);
             metricsA.setPolicyViolationsWarn(3);
             metricsA.setPolicyViolationsInfo(1);
+            metricsA.setKev(1);
             metricsA.setFirstOccurrence(now);
             metricsA.setLastOccurrence(now);
             dao.createProjectMetrics(metricsA);
@@ -293,6 +369,7 @@ public class BadgeResourceTest extends ResourceTest {
             metricsB.setPolicyViolationsFail(1);
             metricsB.setPolicyViolationsWarn(1);
             metricsB.setPolicyViolationsInfo(2);
+            metricsB.setKev(4);
             metricsB.setFirstOccurrence(now);
             metricsB.setLastOccurrence(now);
             dao.createProjectMetrics(metricsB);
