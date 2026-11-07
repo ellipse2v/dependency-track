@@ -39,6 +39,7 @@ public record ListAllProjectsQuery(
         @Nullable Instant lastBomImportSince,
         @Nullable Instant lastBomImportBefore,
         @Nullable List<String> classifiers,
+        @Nullable Boolean hasKev,
         boolean includeMetrics,
         boolean includeParent,
         boolean includeTeams,
@@ -53,7 +54,8 @@ public record ListAllProjectsQuery(
         VERSION,
         CLASSIFIER,
         LAST_BOM_IMPORTED,
-        LAST_RISKSCORE
+        LAST_RISKSCORE,
+        KEV
     }
 
     public record PageToken(
@@ -64,6 +66,7 @@ public record ListAllProjectsQuery(
             @Nullable String lastClassifier,
             @Nullable Long lastBomImport,
             @Nullable Double lastInheritedRiskScore,
+            @Nullable Integer lastKev,
             @Nullable SortBy sortBy,
             @Nullable SortDirection sortDirection,
             Page.TotalCount totalCount)

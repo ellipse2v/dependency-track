@@ -103,6 +103,7 @@ public class ProjectsResource extends AbstractApiResource implements ProjectsApi
             final Long lastBomImportSince,
             final Long lastBomImportBefore,
             final List<Classifier> classifier,
+            final Boolean hasKev,
             final List<String> expand,
             final Integer limit,
             final String pageToken,
@@ -125,6 +126,7 @@ public class ProjectsResource extends AbstractApiResource implements ProjectsApi
                         case "classifier" -> ListAllProjectsQuery.SortBy.CLASSIFIER;
                         case "last_bom_import" -> ListAllProjectsQuery.SortBy.LAST_BOM_IMPORTED;
                         case "last_inherited_risk_score" -> ListAllProjectsQuery.SortBy.LAST_RISKSCORE;
+                        case "kev" -> ListAllProjectsQuery.SortBy.KEV;
                         default ->
                             throw new InvalidSortFieldException(
                                     sortBy,
@@ -134,7 +136,8 @@ public class ProjectsResource extends AbstractApiResource implements ProjectsApi
                                             "version",
                                             "classifier",
                                             "last_bom_import",
-                                            "last_inherited_risk_score"));
+                                            "last_inherited_risk_score",
+                                            "kev"));
                     };
 
             final Page<ProjectDao.ListProjectsRowV2> projectsPage = handle.attach(ProjectDao.class)
@@ -155,6 +158,7 @@ public class ProjectsResource extends AbstractApiResource implements ProjectsApi
                             lastBomImportSince != null ? Instant.ofEpochMilli(lastBomImportSince) : null,
                             lastBomImportBefore != null ? Instant.ofEpochMilli(lastBomImportBefore) : null,
                             classifiers,
+                            hasKev,
                             expandMetrics,
                             expandParent,
                             expandTeams,

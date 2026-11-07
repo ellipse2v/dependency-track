@@ -37,6 +37,7 @@ get:
     * `classifier`
     * `last_bom_import`
     * `last_inherited_risk_score`
+    * `kev`
 
     ### Expandable fields
 
@@ -167,6 +168,15 @@ get:
           $ref: "../../shared/schemas/classifier.yaml"
       style: form
       explode: true
+    - name: has_kev
+      in: query
+      description: |-
+        Filter by known exploited vulnerabilities (KEV), based on the latest project metrics.
+        When `true`, return only projects with at least one KEV.
+        When `false`, return only projects without KEVs, including projects without metrics.
+        Omit to include projects regardless of KEVs.
+      schema:
+        type: boolean
     - name: expand
       in: query
       description: Optional fields to include in each project response item. Unknown values are silently ignored.

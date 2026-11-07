@@ -507,7 +507,8 @@ public interface ProjectDao extends SqlObject, PaginationSupport {
             @Nullable UUID parentUuid,
             @Nullable String parentName,
             @Nullable String parentVersion,
-            boolean hasChildren) {}
+            boolean hasChildren,
+            @Nullable Integer kev) {}
 
     @SqlQuery(/* language=InjectedFreeMarker */ """
             <#-- @ftlvariable name="includeMetrics" type="boolean" -->
@@ -844,6 +845,24 @@ public interface ProjectDao extends SqlObject, PaginationSupport {
             whereConditions.add("\"PROJECT\".\"CLASSIFIER\" = ANY(:classifiers)");
             queryParams.put("classifiers", query.classifiers().toArray(String[]::new));
         }
+        if (query.hasKev() != null) {
+            // NB: Mirrors the metrics returned for each project: the latest PROJECTMETRICS row
+            // for leaf projects, and the aggregate of their descendants for collection projects.
+            // Projects without metrics are considered to have no KEVs.
+            whereConditions.add("""
+                    (COALESCE(CASE
+                      WHEN "PROJECT"."COLLECTION_LOGIC" IS NOT NULL
+                      THEN (SELECT kev_cm.kev FROM (%s) AS kev_cm)
+                      ELSE (
+                        SELECT "KEV"
+                          FROM "PROJECTMETRICS"
+                         WHERE "PROJECT_ID" = "PROJECT"."ID"
+                         ORDER BY "LAST_OCCURRENCE" DESC
+                         LIMIT 1
+                      )
+                    END, 0) > 0) = :hasKev""".formatted(COLLECTION_METRICS_SUBQUERY));
+            queryParams.put("hasKev", query.hasKev());
+        }
 
         return withJitDisabled(() -> {
             final TotalCount totalCount;
@@ -868,6 +887,7 @@ public interface ProjectDao extends SqlObject, PaginationSupport {
                                         ? Instant.ofEpochMilli(decodedPageToken.lastBomImport())
                                         : null;
                             case LAST_RISKSCORE -> decodedPageToken.lastInheritedRiskScore();
+                            case KEV -> decodedPageToken.lastKev();
                         });
             } else {
                 totalCount = getBoundedTotalCountWithProjectAcl(
@@ -916,6 +936,7 @@ public interface ProjectDao extends SqlObject, PaginationSupport {
                         effectiveSortBy == ListAllProjectsQuery.SortBy.LAST_RISKSCORE
                                 ? lastRow.lastInheritedRiskScore()
                                 : null,
+                        effectiveSortBy == ListAllProjectsQuery.SortBy.KEV ? lastRow.kev() : null,
                         effectiveSortBy,
                         effectiveSortDirection,
                         totalCount);
@@ -944,6 +965,20 @@ public interface ProjectDao extends SqlObject, PaginationSupport {
                   THEN cm."inheritedRiskScore"
                   ELSE "PROJECT"."LAST_RISKSCORE"
                 END
+            </#assign>
+            <#-- NB: Projects without metrics sort as having no KEVs. -->
+            <#assign kevExpression>
+                COALESCE(CASE
+                  WHEN "PROJECT"."COLLECTION_LOGIC" IS NOT NULL
+                  THEN cm.kev
+                  ELSE (
+                    SELECT "KEV"
+                      FROM "PROJECTMETRICS"
+                     WHERE "PROJECT_ID" = "PROJECT"."ID"
+                     ORDER BY "LAST_OCCURRENCE" DESC
+                     LIMIT 1
+                  )
+                END, 0)
             </#assign>
             SELECT "PROJECT"."ID"
                  , "PROJECT"."CLASSIFIER" AS "classifier"
@@ -987,6 +1022,9 @@ public interface ProjectDao extends SqlObject, PaginationSupport {
                      ELSE (SELECT TO_JSONB(m) FROM (${leafMetricsSubquery}) AS m)
                    END AS "metricsJson"
             </#if>
+            <#if sortByColumn?has_content && sortByColumn == "KEV">
+                 , ${kevExpression} AS "kev"
+            </#if>
             <#if includeParent>
                  , parent."UUID" AS "parentUuid"
                  , parent."NAME" AS "parentName"
@@ -1007,12 +1045,15 @@ public interface ProjectDao extends SqlObject, PaginationSupport {
             <#assign castedLastSortValue>
                 <#if sortByColumn?has_content && sortByColumn == "LAST_BOM_IMPORTED">CAST(:lastSortValue AS TIMESTAMPTZ)
                 <#elseif sortByColumn?has_content && sortByColumn == "LAST_RISKSCORE">CAST(:lastSortValue AS DOUBLE PRECISION)
+                <#elseif sortByColumn?has_content && sortByColumn == "KEV">CAST(:lastSortValue AS INTEGER)
                 <#else>CAST(:lastSortValue AS TEXT)
                 </#if>
             </#assign>
             <#assign sortByExpression>
                 <#if sortByColumn?has_content && sortByColumn == "LAST_RISKSCORE">
                     ${lastInheritedRiskScoreExpression}
+                <#elseif sortByColumn?has_content && sortByColumn == "KEV">
+                    ${kevExpression}
                 <#elseif sortByColumn?has_content>
                     "PROJECT"."${sortByColumn}"
                 <#else>

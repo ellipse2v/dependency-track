@@ -50,6 +50,7 @@ import jakarta.ws.rs.core.Response;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -693,6 +694,137 @@ public class ProjectsResourceTest extends ResourceTest {
     }
 
     @Test
+    public void listProjectsHasKevFilterTest() {
+        initializeWithPermissions(Permissions.VIEW_PORTFOLIO);
+
+        final var projectWithKev = new Project();
+        projectWithKev.setName("acme-app-with-kev");
+        qm.persist(projectWithKev);
+
+        // Had KEVs in the past, but no longer does.
+        final var projectWithResolvedKev = new Project();
+        projectWithResolvedKev.setName("acme-app-with-resolved-kev");
+        qm.persist(projectWithResolvedKev);
+
+        final var projectWithoutMetrics = new Project();
+        projectWithoutMetrics.setName("acme-app-without-metrics");
+        qm.persist(projectWithoutMetrics);
+
+        final var collection = new Project();
+        collection.setName("acme-collection");
+        collection.setCollectionLogic(ProjectCollectionLogic.AGGREGATE_DIRECT_CHILDREN);
+        qm.createProject(collection, List.of(), false);
+
+        final var collectionChild = new Project();
+        collectionChild.setName("acme-collection-child");
+        collectionChild.setParent(collection);
+        qm.persist(collectionChild);
+
+        useJdbiHandle(handle -> {
+            final var testDao = handle.attach(MetricsTestDao.class);
+            final LocalDate today = LocalDate.now(ZoneOffset.UTC);
+            testDao.createMetricsPartitionsForDate("PROJECTMETRICS", today);
+            testDao.createMetricsPartitionsForDate("PROJECTMETRICS", today.minusDays(1));
+            final Instant now = Instant.now();
+            final Instant earlier = now.minus(1, ChronoUnit.HOURS);
+
+            testDao.createProjectMetrics(createKevMetrics(projectWithKev.getId(), 2, now));
+            testDao.createProjectMetrics(createKevMetrics(projectWithResolvedKev.getId(), 5, earlier));
+            testDao.createProjectMetrics(createKevMetrics(projectWithResolvedKev.getId(), 0, now));
+            testDao.createProjectMetrics(createKevMetrics(collectionChild.getId(), 3, now));
+        });
+
+        Response response = jersey.target("/projects")
+                .queryParam("has_kev", "true")
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get();
+        assertThat(response.getStatus()).isEqualTo(200);
+        JsonObject body = parseJsonObject(response);
+        assertThatJson(body.toString()).inPath("$.items[*].name").isEqualTo(/* language=JSON */ """
+                        ["acme-app-with-kev", "acme-collection", "acme-collection-child"]
+                        """);
+        assertThatJson(body.toString()).inPath("$.total.count").isEqualTo(3);
+
+        response = jersey.target("/projects")
+                .queryParam("has_kev", "false")
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get();
+        assertThat(response.getStatus()).isEqualTo(200);
+        body = parseJsonObject(response);
+        assertThatJson(body.toString()).inPath("$.items[*].name").isEqualTo(/* language=JSON */ """
+                        ["acme-app-with-resolved-kev", "acme-app-without-metrics"]
+                        """);
+        assertThatJson(body.toString()).inPath("$.total.count").isEqualTo(2);
+    }
+
+    @Test
+    public void listProjectsSortByKevIncludingCollectionsTest() {
+        initializeWithPermissions(Permissions.VIEW_PORTFOLIO);
+
+        final var projectA = new Project();
+        projectA.setName("acme-app-a");
+        qm.persist(projectA);
+
+        final var projectB = new Project();
+        projectB.setName("acme-app-b");
+        qm.persist(projectB);
+
+        final var projectWithoutMetrics = new Project();
+        projectWithoutMetrics.setName("acme-app-c");
+        qm.persist(projectWithoutMetrics);
+
+        final var collection = new Project();
+        collection.setName("acme-collection");
+        collection.setCollectionLogic(ProjectCollectionLogic.AGGREGATE_DIRECT_CHILDREN);
+        qm.createProject(collection, List.of(), false);
+
+        final var collectionChild = new Project();
+        collectionChild.setName("acme-collection-child");
+        collectionChild.setParent(collection);
+        qm.persist(collectionChild);
+
+        useJdbiHandle(handle -> {
+            final var testDao = handle.attach(MetricsTestDao.class);
+            testDao.createMetricsPartitionsForDate("PROJECTMETRICS", LocalDate.now(ZoneOffset.UTC));
+            final Instant now = Instant.now();
+
+            testDao.createProjectMetrics(createKevMetrics(projectA.getId(), 1, now));
+            testDao.createProjectMetrics(createKevMetrics(projectB.getId(), 7, now));
+            testDao.createProjectMetrics(createKevMetrics(collectionChild.getId(), 4, now));
+        });
+
+        // Page through the results to exercise the cursor, including ties.
+        final var collected = new java.util.ArrayList<String>();
+        String pageToken = null;
+        do {
+            var target = jersey.target("/projects").queryParam("limit", 2);
+            target = pageToken != null
+                    ? target.queryParam("page_token", pageToken)
+                    : target.queryParam("sort_by", "kev").queryParam("sort_direction", "DESC");
+            final Response response = target.request().header(X_API_KEY, apiKey).get();
+            assertThat(response.getStatus()).isEqualTo(200);
+            final JsonObject body = parseJsonObject(response);
+            body.getJsonArray("items")
+                    .forEach(v -> collected.add(v.asJsonObject().getString("name")));
+            pageToken = body.containsKey("next_page_token") ? body.getString("next_page_token") : null;
+        } while (pageToken != null);
+
+        assertThat(collected)
+                .containsExactly("acme-app-b", "acme-collection", "acme-collection-child", "acme-app-a", "acme-app-c");
+    }
+
+    private static ProjectMetrics createKevMetrics(final long projectId, final int kev, final Instant occurrence) {
+        final var metrics = new ProjectMetrics();
+        metrics.setProjectId(projectId);
+        metrics.setKev(kev);
+        metrics.setFirstOccurrence(Date.from(occurrence));
+        metrics.setLastOccurrence(Date.from(occurrence));
+        return metrics;
+    }
+
+    @Test
     public void listProjectsFiltersTest() {
         initializeWithPermissions(Permissions.VIEW_PORTFOLIO);
 
@@ -1000,7 +1132,7 @@ public class ProjectsResourceTest extends ResourceTest {
                   "title": "Invalid sort field",
                   "detail": "Sorting by field 'invalid_field' is not supported",
                   "invalid_field": "invalid_field",
-                  "supported_fields": ["name", "group", "version", "classifier", "last_bom_import", "last_inherited_risk_score"]
+                  "supported_fields": ["name", "group", "version", "classifier", "last_bom_import", "last_inherited_risk_score", "kev"]
                 }
                 """);
     }
